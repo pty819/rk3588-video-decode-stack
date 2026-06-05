@@ -1,0 +1,73 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Use the same Python version that the docs were written against.
+      # Do NOT use the latest Python without testing — newer Python versions
+      # can change docutils or html.parser behavior in ways that break MyST.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make
+
+      # Pin pip to a known-good version too. 24.0+ has changes to resolver
+      # that can surface as unexpected warnings during the build.
+      - name: Install pip
+        run: |
+          python -m pip install --upgrade "pip==24.0"
+
+      # Install with the EXACT pinned versions from requirements.txt.
+      # Do not remove the version pins — they exist so local and CI
+      # produce byte-identical HTML.
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Build
+        run: make html
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _build/html
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
